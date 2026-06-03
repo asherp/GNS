@@ -10,13 +10,18 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::graph::{resolve, DemoSource, GraphSource, ResolveOptions};
+use crate::graph::{
+    normalize_label, parse_gns_address, resolve, resolve_address, DemoSource, GraphSource,
+    NameResolveOptions, ResolveOptions,
+};
 use crate::nostr::PublicKey;
 
 #[derive(Clone)]
 pub struct AppState {
     pub source: Arc<dyn GraphSource>,
     pub default_max_depth: usize,
+    pub max_fanout: usize,
+    pub max_name_paths: usize,
     pub relays: Vec<String>,
     pub demo: bool,
 }
@@ -24,6 +29,8 @@ pub struct AppState {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/api/resolve", get(resolve_handler))
+        .route("/api/resolve-name", get(resolve_name_handler))
+        .route("/api/normalize", get(normalize_handler))
         .route("/api/profile", get(profile_handler))
         .route("/api/config", get(config_handler))
         .route("/healthz", get(|| async { "ok" }))
@@ -83,6 +90,58 @@ async fn resolve_handler(
 }
 
 #[derive(Debug, Deserialize)]
+struct ResolveNameParams {
+    /// Resolving namespace (the caller's pubkey), npub or hex.
+    from: String,
+    /// GNS address, e.g. `barbara@alex.michael.nostr`.
+    name: String,
+}
+
+async fn resolve_name_handler(
+    State(state): State<AppState>,
+    Query(params): Query<ResolveNameParams>,
+) -> impl IntoResponse {
+    let from = match PublicKey::parse(&params.from) {
+        Ok(pk) => pk,
+        Err(e) => return bad_request(format!("invalid `from`: {e}")).into_response(),
+    };
+    let parsed = match parse_gns_address(&params.name) {
+        Ok(p) => p,
+        Err(e) => return bad_request(format!("invalid `name`: {e}")).into_response(),
+    };
+
+    let opts = NameResolveOptions {
+        max_fanout: state.max_fanout,
+        max_paths: state.max_name_paths,
+    };
+
+    match resolve_address(state.source.as_ref(), from, &parsed, opts).await {
+        Ok(res) => Json(res).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError {
+                error: e.to_string(),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct NormalizeParams {
+    name: String,
+}
+
+async fn normalize_handler(Query(params): Query<NormalizeParams>) -> impl IntoResponse {
+    let label = normalize_label(&params.name);
+    Json(json!({
+        "name": params.name,
+        "label": label,
+        "valid": !label.is_empty(),
+    }))
+}
+
+#[derive(Debug, Deserialize)]
 struct ProfileParams {
     pubkey: String,
 }
@@ -119,11 +178,13 @@ async fn config_handler(State(state): State<AppState>) -> impl IntoResponse {
     } else {
         (None, None)
     };
+    let demo_name = state.demo.then(|| "barbara@alex.michael.nostr".to_string());
     Json(json!({
         "demo": state.demo,
         "relays": state.relays,
         "default_max_depth": state.default_max_depth,
         "demo_from": demo_from,
         "demo_to": demo_to,
+        "demo_name": demo_name,
     }))
 }

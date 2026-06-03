@@ -20,19 +20,35 @@
 
   <main>
     <section class="controls">
+      <div class="tabs">
+        <button type="button" class="tab active" data-mode="name">By name</button>
+        <button type="button" class="tab" data-mode="pubkey">By pubkey</button>
+      </div>
+
       <form id="resolve-form">
         <label>
           From <span class="hint">(your pubkey — npub or hex)</span>
           <input id="from" name="from" placeholder="npub1…" autocomplete="off" spellcheck="false" />
         </label>
-        <label>
-          To <span class="hint">(target pubkey — npub or hex)</span>
-          <input id="to" name="to" placeholder="npub1…" autocomplete="off" spellcheck="false" />
-        </label>
-        <label class="depth">
-          Max depth
-          <input id="max_depth" name="max_depth" type="number" min="1" max="12" value="6" />
-        </label>
+
+        <div class="mode-fields" data-fields="name">
+          <label>
+            GNS name <span class="hint">(e.g. barbara@alex.michael.nostr)</span>
+            <input id="name" name="name" placeholder="barbara@alex.michael.nostr" autocomplete="off" spellcheck="false" />
+          </label>
+        </div>
+
+        <div class="mode-fields" data-fields="pubkey" hidden>
+          <label>
+            To <span class="hint">(target pubkey — npub or hex)</span>
+            <input id="to" name="to" placeholder="npub1…" autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="depth">
+            Max depth
+            <input id="max_depth" name="max_depth" type="number" min="1" max="12" value="6" />
+          </label>
+        </div>
+
         <div class="buttons">
           <button type="submit" id="resolve-btn">Resolve</button>
           <button type="button" id="demo-btn" class="ghost" hidden>Load demo example</button>

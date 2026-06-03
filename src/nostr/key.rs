@@ -87,6 +87,13 @@ impl std::fmt::Display for PublicKey {
     }
 }
 
+/// Convert a hex pubkey to its `npub`, falling back to the input on failure.
+pub fn hex_to_npub(hex: &str) -> String {
+    PublicKey::from_hex(hex)
+        .map(|pk| pk.to_npub())
+        .unwrap_or_else(|_| hex.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

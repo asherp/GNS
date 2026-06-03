@@ -26,15 +26,48 @@ See the [full vision](#vision) below.
 
 ## What this server does
 
-This repository is a **lightweight resolver**: a caller provides two pubkeys and
-the server returns the shortest follow-chain between them, with full provenance.
+This repository is a **lightweight resolver** with two layers:
 
-> Given `from` and `to` pubkeys, return the sequence of npubs connecting them,
-> plus — for every hop — the **follow event id** and the **relays** it was
-> observed on.
+1. **Pubkey resolution** — given `from` and `to` pubkeys, return the shortest
+   follow-chain between them, with full provenance: for every hop, the **follow
+   event id** and the **relays** it was observed on.
+2. **Name resolution** — given a `from` pubkey and a GNS address such as
+   `barbara@alex.michael.nostr`, walk the address's labels through follow lists
+   and return the resolved pubkey (or alternate paths when ambiguous).
 
-Resolution is a breadth-first walk over **kind-3 contact lists**, using only
+Both run as a breadth-first walk over **kind-3 contact lists**, using only
 existing Nostr events. No new NIP is required.
+
+## GNS names
+
+A Nostr profile is eligible for GNS resolution only if its `name` (from the
+kind-0 event) **normalizes to a non-empty label**:
+
+1. take the profile's `name`,
+2. lowercase it,
+3. keep only ASCII letters `a-z` and digits `0-9`,
+4. the result is the label; if empty, the profile has no valid GNS label.
+
+```text
+"Michael"        -> "michael"
+"Michael Saylor" -> "michaelsaylor"
+"MICHAEL-SAYLOR" -> "michaelsaylor"
+"⚡Michael⚡"     -> "michael"
+"FiatJaf"        -> "fiatjaf"
+```
+
+**Membership.** A label `x` belongs to namespace `y` iff `y`'s kind-3 follow
+list contains a pubkey whose normalized label is `x`.
+
+**Ambiguity.** If multiple followed pubkeys in a namespace normalize to the same
+label, that label is **ambiguous and must not resolve**. The resolver returns
+the alternate paths (each fully labelled) so a client can disambiguate.
+
+**Address walk.** `barbara@alex.michael.nostr` reads right-to-left from the
+resolving namespace — walk labels `[michael, alex, barbara]`: find `michael`
+among your follows, `alex` among michael's follows, `barbara` among alex's.
+A trailing `.nostr` namespace TLD is optional; a bare `barbara` is a compressed
+direct lookup.
 
 ## Architecture
 
@@ -50,8 +83,11 @@ Nostr Relays  ──►  GNS Indexer (this server)  ──►  Clients / Dashboa
 | `src/nostr/client.rs` | Minimal per-relay websocket client (for relay attribution) |
 | `src/graph/relay_source.rs` | Fetch follow lists / profiles, fanning out across relays |
 | `src/graph/cache.rs` | TTL "freshness window" cache (the public-good dynamic) |
-| `src/graph/resolver.rs` | Breadth-first shortest-path resolution |
-| `src/api.rs` | HTTP API (`/api/resolve`, `/api/profile`, `/api/config`) |
+| `src/graph/resolver.rs` | Breadth-first shortest-path resolution (pubkey → pubkey) |
+| `src/graph/name.rs` | Label normalization + namespace membership / ambiguity |
+| `src/graph/address.rs` | GNS address parsing (`barbara@alex.michael.nostr`) |
+| `src/graph/name_resolver.rs` | Walk an address's labels through the graph |
+| `src/api.rs` | HTTP API (`/api/resolve`, `/api/resolve-name`, `/api/normalize`, …) |
 | `static/` | Self-contained dashboard with avatar-bubble graph |
 
 The relay client is implemented directly on websockets (rather than via a higher
@@ -107,6 +143,34 @@ cargo run --release
 * `edges` — one per hop; `follow_event_id` is the **follower's** kind-3 event,
   `relays` are where that event was observed.
 
+### `GET /api/resolve-name?from=<npub|hex>&name=<address>`
+
+Resolves a GNS address from the caller's namespace.
+
+```jsonc
+{
+  "query": "barbara@alex.michael.nostr",
+  "from": "npub1…",
+  "target_label": "barbara",
+  "walk_labels": ["michael", "alex", "barbara"],
+  "found": true,
+  "ambiguous": false,
+  "resolved": "npub1…",            // present only when unambiguous
+  "paths": [
+    { "nodes": [ { "npub": "…", "label": "you", "profile": {…} }, … ],
+      "edges": [ { "follow_event_id": "…", "relays": ["wss://…"] }, … ] }
+  ]
+}
+```
+
+When a label is ambiguous, `resolved` is omitted, `ambiguous` is `true`, and
+`paths` contains every alternate route with a `note` explaining why.
+
+### `GET /api/normalize?name=<string>`
+
+Returns the normalized GNS label for a name and whether it is valid (non-empty):
+`{ "name": "⚡Michael⚡", "label": "michael", "valid": true }`.
+
 ### `GET /api/profile?pubkey=<npub|hex>`
 
 Returns kind-0 metadata (name, display name, picture, nip05, about).
@@ -136,10 +200,11 @@ static_dir = "static"
 
 ## Dashboard
 
-The dashboard (`static/`) is dependency-free (vanilla JS + `<canvas>`): it draws
-the resolved path as **avatar bubbles** connected by directed edges, renders the
-derived GNS address (`barbara@alex.michael.nostr`), and lists per-hop follow
-event ids and relays.
+The dashboard (`static/`) is dependency-free (vanilla JS + `<canvas>`). It has
+two modes — **By name** (resolve a GNS address) and **By pubkey** (shortest
+chain between two keys). It draws the resolved path as **avatar bubbles**
+connected by directed edges, shows each node's GNS label, and lists per-hop
+follow event ids and relays. Ambiguous names show every alternate path.
 
 ## Tests
 
@@ -149,16 +214,19 @@ cargo test
 
 Covers npub round-tripping (NIP-19 vector), NIP-01 id computation + schnorr
 verification (genuine sign/verify round-trip, plus tamper detection), `p`-tag
-extraction, and BFS resolution (shortest path, zero-hop, and unreachable cases).
+extraction, BFS resolution (shortest path, zero-hop, unreachable), label
+normalization (all spec examples), namespace membership + ambiguity, GNS address
+parsing, and named-path resolution (unique, single-hop, ambiguous, not-found).
 
 ## Status & roadmap
 
-This is a working prototype of the core resolver. Natural next steps that the
-architecture already accommodates:
+This is a working prototype of the core resolver and the name layer
+(normalization, membership, ambiguity, address resolution). Natural next steps
+the architecture already accommodates:
 
-* **Multiple / alternate shortest paths** (path redundancy) — the resolver
-  currently returns one shortest path; the `GraphSource` + BFS structure extends
-  to returning alternates.
+* **Alternate shortest paths for pubkey resolution** — the pubkey resolver
+  returns one shortest path; named resolution already returns alternates on
+  ambiguity, and the same branching extends to the BFS resolver.
 * **Path compression** — caching learned short-cuts (`You → Barbara`) as the
   graph is traversed.
 * **Persistent index** — the in-memory cache can be backed by a store for warm

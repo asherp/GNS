@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use futures_util::future::join_all;
 use serde::Serialize;
 
-use crate::nostr::PublicKey;
+use crate::nostr::{hex_to_npub, PublicKey};
 
 use super::source::{GraphSource, Profile};
 
@@ -186,12 +186,6 @@ pub async fn resolve(
         .collect();
 
     Ok(resolution)
-}
-
-fn hex_to_npub(hex: &str) -> String {
-    PublicKey::from_hex(hex)
-        .map(|pk| pk.to_npub())
-        .unwrap_or_else(|_| hex.to_string())
 }
 
 #[cfg(test)]

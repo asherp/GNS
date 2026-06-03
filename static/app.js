@@ -10,6 +10,7 @@ const modeEl = $("mode");
 const demoBtn = $("demo-btn");
 
 let config = { demo: false, relays: [] };
+let mode = "name"; // "name" | "pubkey"
 
 // ---- Bootstrap: learn whether we're in demo mode and pre-fill examples. ----
 fetch("/api/config")
@@ -28,36 +29,74 @@ fetch("/api/config")
     modeEl.textContent = "config unavailable";
   });
 
+// ---- Mode tabs ----
+document.querySelectorAll(".tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    mode = tab.dataset.mode;
+    document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
+    document.querySelectorAll(".mode-fields").forEach((f) => {
+      f.hidden = f.dataset.fields !== mode;
+    });
+  });
+});
+
 demoBtn.addEventListener("click", () => {
   if (config.demo_from) $("from").value = config.demo_from;
-  if (config.demo_to) $("to").value = config.demo_to;
+  if (mode === "name") {
+    if (config.demo_name) $("name").value = config.demo_name;
+  } else if (config.demo_to) {
+    $("to").value = config.demo_to;
+  }
 });
 
 // ---- Resolve ----
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const from = $("from").value.trim();
-  const to = $("to").value.trim();
-  const maxDepth = $("max_depth").value;
-  if (!from || !to) {
-    setStatus("Enter both a from and a to pubkey.", "err");
+  if (!from) {
+    setStatus("Enter your `from` pubkey.", "err");
     return;
   }
-  setStatus("Resolving path through the graph…", "");
+
   addressEl.textContent = "";
   detailsEl.hidden = true;
   $("resolve-btn").disabled = true;
 
   try {
-    const params = new URLSearchParams({ from, to, max_depth: maxDepth });
-    const res = await fetch(`/api/resolve?${params}`);
-    const data = await res.json();
-    if (!res.ok) {
-      setStatus(data.error || "Resolution failed.", "err");
-      graph.setData([], []);
-      return;
+    if (mode === "name") {
+      const name = $("name").value.trim();
+      if (!name) {
+        setStatus("Enter a GNS name to resolve.", "err");
+        return;
+      }
+      setStatus("Walking the graph by name…", "");
+      const params = new URLSearchParams({ from, name });
+      const res = await fetch(`/api/resolve-name?${params}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setStatus(data.error || "Resolution failed.", "err");
+        graph.setData([], []);
+        return;
+      }
+      renderName(data);
+    } else {
+      const to = $("to").value.trim();
+      const maxDepth = $("max_depth").value;
+      if (!to) {
+        setStatus("Enter a `to` pubkey.", "err");
+        return;
+      }
+      setStatus("Resolving path through the graph…", "");
+      const params = new URLSearchParams({ from, to, max_depth: maxDepth });
+      const res = await fetch(`/api/resolve?${params}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setStatus(data.error || "Resolution failed.", "err");
+        graph.setData([], []);
+        return;
+      }
+      render(data);
     }
-    render(data);
   } catch (err) {
     setStatus(String(err), "err");
   } finally {
@@ -141,6 +180,84 @@ function render(data) {
   detailsEl.hidden = false;
 
   graph.setData(data.path, data.edges);
+}
+
+function renderName(data) {
+  hopsEl.innerHTML = "";
+  addressEl.textContent = data.query || "";
+
+  if (!data.found) {
+    setStatus(data.note || "No path found for that name.", "err");
+    detailsEl.hidden = true;
+    graph.setData([], []);
+    return;
+  }
+
+  // Banner summarising resolution outcome.
+  const banner = document.createElement("div");
+  if (data.ambiguous) {
+    banner.className = "banner warn";
+    banner.textContent = data.note || "Ambiguous — does not resolve to a single pubkey.";
+    setStatus(`Ambiguous label — ${data.paths.length} alternate paths.`, "err");
+  } else {
+    banner.className = "banner ok";
+    banner.textContent = `Resolved to ${data.resolved}`;
+    setStatus(`Resolved "${data.target_label}" — ${data.paths[0].edges.length} hop(s).`, "ok");
+  }
+  hopsEl.appendChild(banner);
+
+  // Render each path (one when unambiguous; alternates when ambiguous).
+  data.paths.forEach((path, idx) => {
+    const wrap = document.createElement("div");
+    wrap.className = "alt-path";
+    if (data.paths.length > 1) {
+      const h = document.createElement("h3");
+      h.textContent = `Alternate ${idx + 1}`;
+      wrap.appendChild(h);
+    }
+    const list = document.createElement("ol");
+    path.nodes.forEach((node, i) => {
+      const li = document.createElement("li");
+      const name = document.createElement("div");
+      name.className = "hop-name";
+      name.textContent = nodeLabel(node);
+      if (node.label) {
+        const pill = document.createElement("span");
+        pill.className = "label-pill";
+        pill.textContent = node.label;
+        name.appendChild(pill);
+      }
+      const npub = document.createElement("div");
+      npub.className = "hop-npub";
+      npub.textContent = node.npub;
+      li.appendChild(name);
+      li.appendChild(npub);
+
+      if (i > 0) {
+        const edge = path.edges[i - 1];
+        const meta = document.createElement("div");
+        meta.className = "edge-meta";
+        meta.innerHTML = `follow event <code>${edge.follow_event_id.slice(0, 16)}…</code>`;
+        const relays = document.createElement("div");
+        (edge.relays || []).forEach((r) => {
+          const chip = document.createElement("span");
+          chip.className = "relay-chip";
+          chip.textContent = r;
+          relays.appendChild(chip);
+        });
+        meta.appendChild(relays);
+        li.appendChild(meta);
+      }
+      list.appendChild(li);
+    });
+    wrap.appendChild(list);
+    hopsEl.appendChild(wrap);
+  });
+  detailsEl.hidden = false;
+
+  // Draw the first path in the canvas.
+  const primary = data.paths[0];
+  graph.setData(primary.nodes, primary.edges);
 }
 
 // ---------------------------------------------------------------------------

@@ -78,6 +78,8 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         source,
         default_max_depth: cfg.max_depth,
+        max_fanout: cfg.max_fanout,
+        max_name_paths: cfg.max_name_paths,
         relays: if cli.demo {
             vec!["demo://built-in".to_string()]
         } else {

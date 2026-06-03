@@ -38,6 +38,8 @@ impl DemoSource {
         let barbara = pk(0x04);
         let carol = pk(0x05);
         let dave = pk(0x06);
+        let frank1 = pk(0x07);
+        let frank2 = pk(0x08);
 
         let mut contacts = HashMap::new();
         let mut profiles = HashMap::new();
@@ -56,12 +58,14 @@ impl DemoSource {
             );
         };
 
-        edge(&you, &[&michael, &carol], &mut contacts);
+        edge(&you, &[&michael, &carol, &frank1, &frank2], &mut contacts);
         edge(&michael, &[&alex, &dave], &mut contacts);
         edge(&alex, &[&barbara], &mut contacts);
         edge(&carol, &[&barbara], &mut contacts);
         edge(&dave, &[&barbara], &mut contacts);
         edge(&barbara, &[], &mut contacts);
+        edge(&frank1, &[], &mut contacts);
+        edge(&frank2, &[], &mut contacts);
 
         let profile = |hex: &str, name: &str, profiles: &mut HashMap<String, Profile>| {
             profiles.insert(
@@ -81,6 +85,10 @@ impl DemoSource {
         profile(&barbara, "Barbara", &mut profiles);
         profile(&carol, "Carol", &mut profiles);
         profile(&dave, "Dave", &mut profiles);
+        // Two distinct pubkeys whose names both normalize to "frank" — an
+        // ambiguous label within You's namespace.
+        profile(&frank1, "Frank", &mut profiles);
+        profile(&frank2, "⚡Frank⚡", &mut profiles);
 
         DemoSource { contacts, profiles }
     }

@@ -26,5 +26,12 @@ verify_signatures = true
 # Default maximum BFS depth when resolving a path.
 max_depth = 6
 
+# Maximum follows inspected per namespace during name resolution
+# (each followed pubkey needs a kind-0 profile fetch to compute its label).
+max_fanout = 5000
+
+# Maximum alternate paths carried forward when a label is ambiguous.
+max_name_paths = 16
+
 # Directory of static dashboard assets.
 static_dir = "static"
