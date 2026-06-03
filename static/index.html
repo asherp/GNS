@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GNS — Graph Name System</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">◍</span>
+      <div>
+        <h1>Graph Name System</h1>
+        <p class="tag">Resolve names through the Nostr social graph</p>
+      </div>
+    </div>
+    <div id="mode" class="mode"></div>
+  </header>
+
+  <main>
+    <section class="controls">
+      <form id="resolve-form">
+        <label>
+          From <span class="hint">(your pubkey — npub or hex)</span>
+          <input id="from" name="from" placeholder="npub1…" autocomplete="off" spellcheck="false" />
+        </label>
+        <label>
+          To <span class="hint">(target pubkey — npub or hex)</span>
+          <input id="to" name="to" placeholder="npub1…" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="depth">
+          Max depth
+          <input id="max_depth" name="max_depth" type="number" min="1" max="12" value="6" />
+        </label>
+        <div class="buttons">
+          <button type="submit" id="resolve-btn">Resolve</button>
+          <button type="button" id="demo-btn" class="ghost" hidden>Load demo example</button>
+        </div>
+      </form>
+      <div id="status" class="status"></div>
+      <div id="address" class="address"></div>
+    </section>
+
+    <section class="viz">
+      <canvas id="graph"></canvas>
+    </section>
+
+    <section id="details" class="details" hidden>
+      <h2>Resolution path</h2>
+      <ol id="hops"></ol>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

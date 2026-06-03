@@ -1,0 +1,30 @@
+# GNS resolver configuration.
+
+# Address the HTTP server binds to.
+bind = "127.0.0.1:8080"
+
+# Nostr relays to query for kind-3 (follows) and kind-0 (profile) events.
+relays = [
+    "wss://relay.damus.io",
+    "wss://nos.lol",
+    "wss://relay.nostr.band",
+    "wss://relay.primal.net",
+]
+
+# Per-relay request timeout (milliseconds).
+relay_timeout_ms = 5000
+
+# How long cached follow lists / profiles are considered fresh (seconds).
+cache_ttl_secs = 300
+
+# Maximum number of pubkeys to cache, per kind.
+cache_capacity = 100000
+
+# Verify schnorr signatures on every fetched event.
+verify_signatures = true
+
+# Default maximum BFS depth when resolving a path.
+max_depth = 6
+
+# Directory of static dashboard assets.
+static_dir = "static"
