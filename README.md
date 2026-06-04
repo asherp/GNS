@@ -69,12 +69,13 @@ among your follows, `alex` among michael's follows, `barbara` among alex's.
 A trailing `.nostr` namespace TLD is optional; a bare `barbara` is a compressed
 direct lookup.
 
-**Renames, spoofing & ordering.** How GNS treats names over time — why renames
-are clean and ungated (identity is the pubkey, not the name), how the follow
-requirement and ambiguity rule defeat spoofing, the "silent swap" gap and a TOFU
-continuity memo to detect it, and the role of hash chains / OpenTimestamps for
-trustless cross-key seniority — is written up in
-[`docs/naming.md`](docs/naming.md).
+**Renames, spoofing, ordering & key migration.** How GNS treats names over
+time — why renames are clean and ungated (identity is the pubkey, not the name),
+how the follow requirement and ambiguity rule defeat spoofing, the "silent swap"
+gap and a TOFU continuity memo to detect it, how key migration works (followers
+re-point their follows; a signed old↔new attestation keeps it safe), and the
+role of hash chains / OpenTimestamps for trustless cross-key seniority — is
+written up in [`docs/naming.md`](docs/naming.md).
 
 ## Architecture
 

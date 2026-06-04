@@ -198,18 +198,97 @@ timestamp without Bitcoin's latency — the cheap 80% of what OTS provides.
 
 So the indexer can grow into: **resolver + archiver + (optional) OTS attestor.**
 
-## 7. Layered conclusion
+## 7. Key migration
+
+Key migration (Alice moves from `K_old` to `K_new`, by rotation or after loss)
+falls out of the same primitives. Crucially, **on the wire a migration looks
+identical to the "silent swap" spoof of §3C** — `alice.bob` used to point at
+`K_old`, now points at `K_new`. The whole design problem is letting the
+legitimate migration through while still catching the hostile takeover.
+
+### The resolution half is automatic (follows are votes)
+
+Membership is "Bob follows a key named alice." So the moment Bob unfollows
+`K_old` and follows `K_new` (named "alice"), `alice.bob` → `K_new`. No rename
+operation, no registrar, no protocol step — **each follower re-pointing their
+edge is a vote**, and the name tracks the namespace owner's own follows.
+
+It is **gradual / eventually-consistent**, which is correct rather than a bug:
+migrated followers resolve to `K_new`, un-migrated ones to `K_old`, and the graph
+heals as people move. No flag day; each namespace honestly reflects what its
+owner currently believes.
+
+### The hard half is *authorizing* the move
+
+"Resolves automatically once Bob follows `K_new`" just relocates the question to
+*why* Bob would follow `K_new` and how he knows it is really Alice.
+
+- **Planned rotation (`K_old` still controlled).** Alice publishes a **signed
+  migration pointer** from `K_old`: "my successor is `K_new`." Clients verify it
+  against the key they already trust (`K_old`) and offer one-click re-follow. The
+  strong form is **bidirectional cross-signing**: `K_old` signs "successor =
+  `K_new`" *and* `K_new` signs "predecessor = `K_old`," so both keys provably
+  consent — defeating an attacker who controls only one. (NIP-26 delegated
+  signing is a related primitive but addresses delegation, not succession; there
+  is no finalized migration NIP at time of writing, so this is a small convention
+  GNS would adopt or define.)
+- **Compromise (`K_old` also held by an attacker).** Nothing `K_old` says can be
+  trusted, so migration cannot be authorized cryptographically from `K_old`. It
+  falls back to out-of-band re-establishment (other channels, or proving control
+  of other identities Alice holds). GNS softens this — each follower decides
+  individually, so there is no single binding to hijack — but it does **not**
+  solve key compromise, and we should not pretend it does.
+
+### Migrate *both* events
+
+A migrating key must republish **kind-0 (name) and kind-3 (follows)** to
+`K_new`. If Michael ports only his profile, `…@michael.nostr` reaches `K_new` but
+`K_new` follows nobody, so everything *downstream* of Michael (`alex`, `barbara`)
+breaks. Migration means carrying your outgoing namespace with you.
+
+### How it plugs into the other layers
+
+The signed migration attestation is exactly the discriminator the earlier layers
+were missing:
+
+1. **Migration vs silent-swap spoof.** The TOFU continuity memo (§4) flags
+   `alice.bob` changing `K_old`→`K_new` as "⚠ changed hands." A verified
+   `K_old`↔`K_new` link downgrades that to "✓ migrated (attested by prior key)";
+   no link → it correctly stays a warning.
+2. **Collapses the transient double-follow ambiguity.** Mid-migration, if Bob
+   follows *both* keys and both are named "alice," the ambiguity rule (§3B) would
+   refuse to resolve. If the pair is attested, the indexer treats them as one
+   identity and **prefers the successor** instead of failing.
+3. **Old-key redirect.** Symmetric to the old-*name* redirect: lookups landing on
+   `K_old` can annotate "migrated to `K_new`," nudging stragglers to re-follow.
+4. **OTS anchoring** (§5) gives the attestation a trustless timestamp, so an
+   attacker cannot forge an *earlier* "migration" to retroactively hijack a name.
+
+### Summary
+
+The resolution is automatic and needs no new code — migration is just everyone
+re-pointing their follow. What makes it *safe and smooth* is a
+**(bi)directionally-signed migration attestation linking `K_old` and `K_new`**,
+which lets clients re-follow with confidence, tells the spoofing layer the swap
+is legitimate, collapses the double-follow ambiguity toward the successor, and
+powers a straggler redirect — with key *compromise* as the residual hard case
+the graph can only soften, not solve.
+
+## 8. Layered conclusion
 
 | Concern | Mechanism | Cost | Status |
 | --- | --- | --- | --- |
 | Inject a name into a namespace | Follow requirement (membership rule) | none | **implemented** |
 | Rename yourself | Key-based identity (no gating) | none | **implemented** (renames just work) |
 | Two followed keys collide on a name | Ambiguity rule (don't resolve, return alternates) | none | **implemented** |
+| Migrate keys (resolution) | Followers re-point follows (votes) | none | **implemented** (re-follow just works) |
 | Old-name still routes | `(namespace,label)→pubkey` redirect memo | tiny | proposed |
 | Name silently changes hands | Same memo, TOFU "changed hands" flag | tiny | proposed |
+| Migrate keys (safely) | Signed `K_old`↔`K_new` attestation (downgrades the flag, collapses ambiguity) | small | proposed |
 | Who held a name first (across keys) | OTS / Bitcoin anchoring + archiving | heavy, optional | future |
 | Equivocation / forks | Per-author chains + anchoring | heavy, optional | future |
 
-The guiding principle: **keep the common path (resolve + rename) free and
-key-based; add state only to *detect* (not gate) name hand-offs; reserve
-external anchoring for trustless cross-key disputes.**
+The guiding principle: **keep the common path (resolve + rename + re-follow)
+free and key-based; add state only to *detect* (not gate) name hand-offs and to
+*verify* migrations; reserve external anchoring for trustless cross-key
+disputes.**
