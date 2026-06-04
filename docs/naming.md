@@ -274,7 +274,126 @@ is legitimate, collapses the double-follow ambiguity toward the successor, and
 powers a straggler redirect — with key *compromise* as the residual hard case
 the graph can only soften, not solve.
 
-## 8. Layered conclusion
+## 8. Weighted resolution
+
+Everything above — shortest path, the ambiguity rule, "prefer the successor,"
+"prefer mutual follows" — is a special case of one mechanism: **weighted
+best-path search**.
+
+### The algebra
+
+Give each edge a weight `w ∈ [0,1]` (confidence that this hop is the correct
+reading of the label). A path's score is the **product** of its edge weights,
+and resolution picks the **maximum-score** path. Work in negative-log space —
+`cost = -ln(w)`, minimize the **sum** — and it is plain **Dijkstra**, with the
+useful boundary `w = 0 → cost = +∞ → path excluded`. One algorithm subsumes:
+
+```
+edge weight w        cost = -ln(w)        effect
+1.0  (certain)        0                    free hop
+δ < 1 (per-hop decay) -ln δ > 0            longer paths score lower → shortest-path preference
+0    (name conflict)  +∞                   path dropped
+```
+
+Today's behaviour is exactly the special case **weights ∈ {0,1} with hop decay**:
+unit weight + decay recovers shortest path; `Ambiguous ⇒ weight 0` recovers
+"must not resolve." Nothing regresses. But per-*edge* zeroing also improves on
+the current global failure: an ambiguous hop no longer fails the whole
+resolution — a *different* unambiguous route to the same target survives and
+wins, which is precisely the spec's "SHOULD return alternate paths even if they
+are longer." (A *strict* named address with a forced ambiguous hop still
+correctly dies — there is no other reading of that hop.)
+
+### Edge weight = a product of independent factors
+
+Keep the weight factored, so each signal is its own tunable knob:
+
+```
+w(A → B) = δ_hop  ×  recip(A,B)  ×  select(A)  ×  conflict  ×  (continuity, attestation, …)
+              ↑          ↑             ↑            ↑
+        per-hop decay  reciprocity   selectivity  0 if name conflict
+```
+
+- **`δ_hop` (< 1)** — distance decay, so a chain of strong follows is never
+  "free" and closer identities win (this is also where *path compression* lives:
+  learned shortcuts are simply closer/cheaper).
+- **`conflict`** — `0` on an ambiguous label; kills the path.
+- **`recip(A,B)`** — reciprocity (below).
+- **`select(A)`** — selectivity (below).
+- Later signals (TOFU continuity penalty, migration attestation restore,
+  seniority) slot in as further multipliers without changing the search.
+
+### Reciprocity: mutual follows beat one-way
+
+A one-way follow is nearly free to manufacture (follow a celebrity, follow your
+target); a follow-*back* needs the other party's cooperation. So mutual edges
+carry more confidence: `recip = 1` if B also follows A, `r < 1` if one-way.
+
+Choose `r` as a **"hops" question**, not a decimal. Because `-ln(m^k) =
+k·(-ln m)`, setting
+
+> **one-way weight = (mutual weight)^k**
+
+makes a one-way hop cost exactly `k` mutual hops, *independent* of the decay:
+
+| intent | k | example (mutual = 0.9) |
+| --- | --- | --- |
+| reachability — mild preference | 2 | one-way 0.81 |
+| naming / discovery — clear preference | 3 | one-way 0.73 |
+| high-assurance | 4–5 | one-way only as a last resort |
+
+Default **k = 2** generally, **k = 3** for naming/discovery (where "is this the
+alice *I* mean" deserves the bias). Avoid large `k` — it sends the search on
+absurd mutual detours to dodge a single one-way edge.
+
+Detecting mutuality costs the *reverse* edge: to weight `A → B` you need B's
+kind-3 to check whether `A ∈ B.follows`. That roughly doubles contact-list
+fetches, amortized by the freshness cache (and you often need B's list next
+anyway).
+
+### Selectivity: a follow from a choosy account counts more
+
+A follow from someone who follows 50,000 accounts is weak evidence; a follow
+from someone who follows 50 is strong. The follower's out-degree is just their
+contact-list size, which we already have, so fold in an inverse-out-degree
+factor, e.g.
+
+```
+select(A) = 1 / (1 + ln(out_degree(A)))
+```
+
+Reciprocity says "they follow back"; selectivity says "and they are choosy about
+it" — together a decent proxy for a real relationship. (Tune the shape; `ln`
+keeps it gentle so that following a few thousand accounts still leaves usable
+weight, while follow-everything accounts are strongly discounted.)
+
+### Corroboration is a *different* combine
+
+Max-product picks the single best path. "This target is reached by many
+independent paths, so I trust it more" is product *within* a path but **sum
+*across* paths** (trust-flow / conductance — the forward algorithm vs Viterbi).
+Treat it as a later confidence-aggregation layer, separate from the single
+best-path search.
+
+### Policy knobs
+
+- **Conflict = hard 0 (default)** keeps the clash *surfaced* rather than
+  silently auto-picked — the property we wanted in §3/§4. Weighting conflicts by
+  seniority/closeness instead of zeroing (auto-pick the senior claim) is an
+  opt-in policy, not the default.
+- The meaningful quantities are all *ratios of logs*; pick `δ`, `k`, and the
+  selectivity shape by intent, then the absolute scale only matters once
+  multiple non-uniform factors coexist.
+
+### Mapping to the code
+
+`PathEdge` gains `weight: f64`; the resolver core becomes a Dijkstra over
+`-ln(weight)`; `Membership::Ambiguous` emits its candidates with `weight = 0`
+(or seniority/closeness weights under a policy flag); each returned path carries
+a `score`. `resolved = Some` iff exactly one maximum-score path with score > 0;
+all-zero → `resolved = None` + alternates, identical to today.
+
+## 9. Layered conclusion
 
 | Concern | Mechanism | Cost | Status |
 | --- | --- | --- | --- |
@@ -282,6 +401,8 @@ the graph can only soften, not solve.
 | Rename yourself | Key-based identity (no gating) | none | **implemented** (renames just work) |
 | Two followed keys collide on a name | Ambiguity rule (don't resolve, return alternates) | none | **implemented** |
 | Migrate keys (resolution) | Followers re-point follows (votes) | none | **implemented** (re-follow just works) |
+| Shortest / best path | Weighted Dijkstra over `-ln(weight)` (generalizes BFS) | small | proposed |
+| Prefer mutual & selective follows | Reciprocity (one-way = mutual^k) × selectivity (inverse out-degree) factors | small | proposed |
 | Old-name still routes | `(namespace,label)→pubkey` redirect memo | tiny | proposed |
 | Name silently changes hands | Same memo, TOFU "changed hands" flag | tiny | proposed |
 | Migrate keys (safely) | Signed `K_old`↔`K_new` attestation (downgrades the flag, collapses ambiguity) | small | proposed |
@@ -289,6 +410,6 @@ the graph can only soften, not solve.
 | Equivocation / forks | Per-author chains + anchoring | heavy, optional | future |
 
 The guiding principle: **keep the common path (resolve + rename + re-follow)
-free and key-based; add state only to *detect* (not gate) name hand-offs and to
-*verify* migrations; reserve external anchoring for trustless cross-key
-disputes.**
+free and key-based; treat resolution as weighted best-path search (conflict =
+weight 0); add state only to *detect* (not gate) name hand-offs and to *verify*
+migrations; reserve external anchoring for trustless cross-key disputes.**
