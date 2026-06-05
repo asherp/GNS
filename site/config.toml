@@ -1,0 +1,23 @@
+# Zola configuration for the GNS landing site.
+#
+# `base_url` is a sensible default for GitHub Pages, but the deploy workflow
+# overrides it with `zola build --base-url <pages-url>` so the generated links
+# are always correct regardless of repo-name casing or a custom domain.
+base_url = "https://asherp.github.io/GNS"
+
+title = "GNS — Graph Name System"
+description = "Decentralized naming and discovery over the Nostr social graph. Names resolve through graph relationships, not servers or raw public keys."
+
+# This is a single hand-built marketing page, so we don't need Zola's search
+# index or feeds, and we keep our own stylesheet rather than compiling Sass.
+compile_sass = false
+build_search_index = false
+generate_feeds = false
+
+# Don't rewrite outgoing links or insert anchors — the page is self-contained.
+[markdown]
+highlight_code = false
+
+[extra]
+github_url = "https://github.com/asherp/gns"
+spec_url = "https://github.com/asherp/gns/blob/main/docs/naming.md"
