@@ -75,9 +75,12 @@ pubkey, not the name), how the follow requirement and ambiguity rule defeat
 spoofing, the "silent swap" gap and a TOFU continuity memo to detect it, how key
 migration works (followers re-point their follows; a signed old↔new attestation
 keeps it safe), how resolution generalizes to a weighted best-path search
-(conflict = weight 0, with mutual-follow and selectivity weighting), and the
-role of hash chains / OpenTimestamps for trustless cross-key seniority — is
-written up in [`docs/naming.md`](docs/naming.md).
+(conflict = weight 0, with mutual-follow and selectivity weighting), the role of
+hash chains / OpenTimestamps for trustless cross-key seniority, how **NIP-05
+becomes one optional attestation weight rather than the root of identity** (the
+stack is *pubkey → signed name → social graph → NIP-05 → OTS/Bitcoin*), and why
+the costs land on **discovery rather than name registration** — is written up in
+[`docs/naming.md`](docs/naming.md).
 
 ## Architecture
 
