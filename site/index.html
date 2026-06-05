@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GNS — Graph Name System</title>
+  <meta name="description" content="A decentralized naming and discovery layer built on the Nostr social graph. Names resolve through graph relationships, not registrars." />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="nav">
+    <div class="brand">
+      <span class="logo">◍</span>
+      <span class="brand-name">GNS</span>
+    </div>
+    <nav class="links">
+      <a href="#how">How it works</a>
+      <a href="#demo">Demo</a>
+      <a href="https://github.com/asherp/GNS">GitHub</a>
+      <a href="https://github.com/asherp/GNS/blob/main/docs/naming.md">Design notes</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <h1>Names through the <span class="grad">social graph</span></h1>
+    <p class="lede">
+      GNS is a decentralized naming and discovery layer built on the Nostr social
+      graph. Instead of mapping names to servers or directly to keys, it resolves
+      names through <em>graph relationships</em>.
+    </p>
+    <div class="cta">
+      <a class="btn" href="#demo">Try the demo ↓</a>
+      <a class="btn ghost" href="https://github.com/asherp/GNS">View on GitHub</a>
+    </div>
+
+    <div class="compare">
+      <div class="card">
+        <div class="tag">DNS</div>
+        <code>name → server</code>
+        <p>Globally unique. Pay to own.</p>
+      </div>
+      <div class="card">
+        <div class="tag">NIP-05</div>
+        <code>name → pubkey</code>
+        <p>Verification via a domain.</p>
+      </div>
+      <div class="card hot">
+        <div class="tag">GNS</div>
+        <code>(name, graph position) → pubkey</code>
+        <p>Discovery via relationships.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="how">
+    <h2>The scarce resource is your position in the graph</h2>
+    <p>
+      Names need not be globally unique — <code>john.company</code>,
+      <code>john.friend</code>, and <code>john.bitcoin</code> can all coexist. A
+      GNS address reads right-to-left as a walk from <em>your</em> vantage point:
+    </p>
+    <div class="anatomy">
+      <code class="addr">barbara@alex.michael.nostr</code>
+      <div class="anatomy-legend">
+        <span><b>barbara</b> — target name</span>
+        <span><b>alex.michael</b> — graph path</span>
+        <span><b>.nostr</b> — namespace</span>
+      </div>
+      <p class="walk">
+        You → follow <b>michael</b> → in his follows find <b>alex</b> → in hers find <b>barbara</b>.
+        Each hop is an existing Nostr <code>kind&nbsp;3</code> follow; the graph is the resolver.
+      </p>
+    </div>
+  </section>
+
+  <section id="demo" class="demo">
+    <h2>Resolve a name, live</h2>
+    <p class="demo-note">
+      Runs <b>entirely in your browser</b> on a built-in example graph — no server,
+      no relays. Mirrors the real resolver's normalization, membership, and
+      ambiguity rules.
+    </p>
+
+    <div class="graph-legend">Example graph: You follow Michael, Carol, and two accounts both named “Frank”. Michael follows Alex &amp; Dave; Alex, Carol, Dave each follow Barbara.</div>
+
+    <div class="demo-controls">
+      <input id="addr" value="barbara@alex.michael.nostr" autocomplete="off" spellcheck="false" />
+      <button id="resolve">Resolve</button>
+    </div>
+    <div class="chips">
+      <button class="chip" data-addr="barbara@alex.michael.nostr">barbara@alex.michael.nostr</button>
+      <button class="chip" data-addr="barbara@carol.nostr">barbara@carol.nostr</button>
+      <button class="chip" data-addr="dave@michael.nostr">dave@michael.nostr</button>
+      <button class="chip" data-addr="frank@nostr">frank@nostr (ambiguous)</button>
+    </div>
+
+    <div id="status" class="status"></div>
+    <canvas id="graph" class="graph"></canvas>
+    <div id="details" class="details" hidden>
+      <ol id="hops"></ol>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>
+      GNS is an open prototype. To run the real resolver (live relays + API +
+      this dashboard):
+    </p>
+    <pre><code>git clone https://github.com/asherp/GNS
+cd GNS
+cargo run -- --demo   # then open http://127.0.0.1:8080/</code></pre>
+    <p class="muted">
+      <a href="https://github.com/asherp/GNS">Repository</a> ·
+      <a href="https://github.com/asherp/GNS/blob/main/docs/naming.md">Naming design notes</a> ·
+      Built on <a href="https://nostr.com">Nostr</a>
+    </p>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>
