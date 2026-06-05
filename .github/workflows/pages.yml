@@ -38,13 +38,11 @@ jobs:
           sudo install -m 0755 zola /usr/local/bin/zola
           zola --version
 
+      # Requires a one-time repo setting: Settings → Pages → Source = "GitHub
+      # Actions" (the Actions token can deploy Pages but cannot enable it).
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5
-        with:
-          # Enable Pages (build type = GitHub Actions) on first run, so no
-          # manual Settings → Pages toggle is required.
-          enablement: true
 
       # Override base_url so links are correct regardless of repo-name casing
       # or a custom domain (configure-pages reports the real Pages URL).
