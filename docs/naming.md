@@ -18,6 +18,10 @@ called out explicitly.
   Catching it needs a tiny continuity memo, not profile history.
 - For **trustless cross-key seniority** you need an external clock
   (OpenTimestamps / Bitcoin). That layer is optional and adversarial-only.
+- **NIP-05 is one optional signal, not the root.** Identity is the key; NIP-05 is
+  a DNS domain co-signing it — corroboration, weighted like any other edge, never
+  a gate (§9). The cost model follows from this: you pay for *discovery*
+  (traversal, freshness, proofs), not for *registering* names (§10).
 
 ## 1. What a name is
 
@@ -393,7 +397,104 @@ best-path search.
 a `score`. `resolved = Some` iff exactly one maximum-score path with score > 0;
 all-zero → `resolved = None` + alternates, identical to today.
 
-## 9. Layered conclusion
+## 9. NIP-05: one optional signal, not the root
+
+Traditional **NIP-05** proves `name@example.com` by having a DNS-controlled web
+server publish a `.well-known/nostr.json` that maps the name to a pubkey. It is
+useful, but its *authority* is **domain ownership**, which re-imports exactly the
+DNS problems GNS set out to avoid: domains expire, registrars can seize names,
+*ownership* (not relationship) decides identity, and you pay rent to keep a
+namespace alive.
+
+GNS inverts the dependency. Identity is the **pubkey**; the name is kind-0
+**metadata**; resolution is **graph position**. In that world NIP-05 doesn't
+disappear — it **demotes** from *the* identity binding to **one attestation among
+many**: a domain owner vouching "this pubkey is mine," exactly as useful (and as
+limited) as any other voucher in the graph.
+
+### The stack, most authoritative first
+
+```
+1. Public key          identity itself — everything else is a claim about a key
+2. Signed kind-0 name   the key's current *claimed* name (self-asserted, mutable, not unique)
+3. Social graph (kind-3) trust & resolution — who vouches; mutual/selective weight; shortest path
+4. NIP-05               optional external attestation — a DNS domain co-signing the key
+5. OpenTimestamps/BTC   historical proof & permanence — trustless cross-key seniority (§5)
+```
+
+Read top-down this is a **fallback order, not a dependency chain**: each lower
+layer is optional and *adds confidence* to the layer above without being required
+by it. Strip NIP-05 and OTS away and GNS still resolves — they only sharpen
+disputes. (The layer that does the real naming work is **3**, the graph; **1** is
+what makes renames and migration clean, per §2 and §7.)
+
+### Where NIP-05 still earns its place
+
+- **Interop, for free.** Existing Nostr clients already display and verify
+  NIP-05, so a GNS key that *also* publishes one gets a verified badge everywhere
+  today — GNS coexists with NIP-05 rather than replacing it.
+- **A weight, not a gate.** In the §8 algebra a verified NIP-05 is just another
+  multiplicative factor on confidence — "this key is also vouched by domain X" —
+  never a precondition for resolution. Treat it like reciprocity/selectivity: a
+  knob, not a router.
+- **An out-of-band anchor for migration.** §7's key-*compromise* case falls back
+  to "other identities Alice controls"; a NIP-05 domain is precisely such an
+  identity, useful for re-establishing a key the graph alone can't authorize.
+
+### What it is explicitly *not* in GNS
+
+- not **globally unique** — the `@alice` in `alice.bob` is graph-relative;
+- not a name **registry** — there is no scarce reserved string to own;
+- not **required** to resolve; and
+- not **authoritative over the graph** — if NIP-05 says one thing and the follows
+  say another, the follows win. NIP-05 is corroboration.
+
+So NIP-05 is the same shape as everything else in §8 — a signed claim with a
+provenance (here, a domain) — and gets the same treatment: **surfaced, weighted,
+never trusted as the root.**
+
+## 10. Economics: pay for discovery, not registration
+
+Demoting the name from "the asset" to "metadata" also moves *where the money is*.
+
+**Registration model (DNS / ENS / NFT namespaces).** Scarcity is manufactured on
+the *name*: you pay to reserve a string, pay to renew, and the name can lapse or
+be seized. Identity becomes a **rented asset** — exactly what GNS is trying not
+to be.
+
+**Discovery model (GNS).** Names aren't scarce — anyone can call themselves
+"alice" — so there is nothing to *sell* at the name. The real, recurring cost is
+**resolution**: traversing the graph, indexing kind-3 lists, keeping caches
+fresh, fetching reverse edges for reciprocity, and maintaining/re-verifying
+proofs. That cost recurs whether or not any name ever changes, and it is where a
+sustainable business sits. The chargeable surfaces:
+
+| surface | what you're paying for |
+| --- | --- |
+| lookups / traversal | answering `barbara@alex.michael.nostr` |
+| indexing & path compression | precomputed shortcuts so hot paths stay cheap (§8) |
+| freshness / caching | the cache TTL is literally a "how stale will you tolerate" knob — the public-good dynamic |
+| proof maintenance | archiving observed kind-0/kind-3 and keeping OTS proofs (§5, "you must keep what you anchor") |
+
+The slogan: **businesses subsidize path freshness; they don't collect rent on
+names.** A company that wants `*.acme` to resolve crisply pays to keep *its*
+corner of the graph indexed and fresh — improving a shared public good — rather
+than paying a registrar to *own* the string "acme." Stop paying and resolution
+gets **staler, not revoked**: the names still exist in the graph, and any other
+indexer can rebuild from relay data. Compare registration, where non-payment
+*deletes* your identity.
+
+Two consequences worth stating:
+
+- **Anchors are portable, so timestamping is a public good, not a moat.** Because
+  OTS settles to one chain (§5), a proof one indexer pays to create is verifiable
+  by all — you can't lock customers in by hoarding seniority proofs; you compete
+  on freshness and coverage.
+- **Incentives point at keeping the graph live, not at gatekeeping.** Revenue
+  scales with *use* (queries, freshness SLAs) rather than with *exclusion* (who is
+  forbidden a name) — the alignment you want for a naming commons.
+
+## 11. Layered conclusion
 
 | Concern | Mechanism | Cost | Status |
 | --- | --- | --- | --- |
@@ -408,8 +509,14 @@ all-zero → `resolved = None` + alternates, identical to today.
 | Migrate keys (safely) | Signed `K_old`↔`K_new` attestation (downgrades the flag, collapses ambiguity) | small | proposed |
 | Who held a name first (across keys) | OTS / Bitcoin anchoring + archiving | heavy, optional | future |
 | Equivocation / forks | Per-author chains + anchoring | heavy, optional | future |
+| External domain attestation | NIP-05 as a confidence *weight* (corroboration), not a gate | none (interop) | optional |
+| Sustainable operation | Charge for *discovery* (traversal / freshness / proofs), not name *registration* | — | economic model |
 
 The guiding principle: **keep the common path (resolve + rename + re-follow)
 free and key-based; treat resolution as weighted best-path search (conflict =
 weight 0); add state only to *detect* (not gate) name hand-offs and to *verify*
-migrations; reserve external anchoring for trustless cross-key disputes.**
+migrations; fold external attestations (NIP-05) in as weights, never roots; and
+reserve external anchoring for trustless cross-key disputes.** The identity stack
+is layered (§9): *pubkey → signed name → social graph → NIP-05 → OTS/Bitcoin*,
+each lower layer optional and only *adding* confidence — which is why the costs
+land on **discovery, not registration** (§10).
