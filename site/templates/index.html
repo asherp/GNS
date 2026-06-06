@@ -101,26 +101,76 @@
     <div class="section-head">
       <h2>Resolve a name, <span class="grad">live</span></h2>
       <p>
-        Runs <strong>entirely in your browser</strong> on a built-in example graph —
-        no server, no relays. It mirrors the real resolver's normalization,
-        membership, and ambiguity rules.
+        Two ways to try it: a <strong>built-in example graph</strong> (offline,
+        deterministic), or <strong>live</strong> — your browser connects straight
+        to public Nostr relays and resolves real keys. Either way it runs the same
+        normalization, membership, and ambiguity rules as the Rust resolver.
       </p>
     </div>
 
-    <div class="graph-legend">
-      Example graph: <strong>You</strong> follow Michael, Carol, and two accounts both named
-      “Frank”. Michael follows Alex &amp; Dave; Alex, Carol, and Dave each follow Barbara.
+    <div class="demo-modes">
+      <button class="demo-mode active" data-dmode="fixture">Built-in example</button>
+      <button class="demo-mode" data-dmode="live">Live (connect to relays)</button>
     </div>
 
-    <div class="demo-controls">
-      <input id="addr" value="barbara@alex.michael.nostr" autocomplete="off" spellcheck="false" />
-      <button id="resolve">Resolve</button>
+    <!-- Built-in example pane -->
+    <div class="demo-pane" data-pane="fixture">
+      <div class="graph-legend">
+        Example graph: <strong>You</strong> follow Michael, Carol, and two accounts both named
+        “Frank”. Michael follows Alex &amp; Dave; Alex, Carol, and Dave each follow Barbara.
+      </div>
+
+      <div class="demo-controls">
+        <input id="addr" value="barbara@alex.michael.nostr" autocomplete="off" spellcheck="false" />
+        <button id="resolve">Resolve</button>
+      </div>
+      <div class="chips">
+        <button class="chip" data-addr="barbara@alex.michael.nostr">barbara@alex.michael.nostr</button>
+        <button class="chip" data-addr="barbara@carol.nostr">barbara@carol.nostr</button>
+        <button class="chip" data-addr="dave@michael.nostr">dave@michael.nostr</button>
+        <button class="chip" data-addr="frank@nostr">frank@nostr (ambiguous)</button>
+      </div>
     </div>
-    <div class="chips">
-      <button class="chip" data-addr="barbara@alex.michael.nostr">barbara@alex.michael.nostr</button>
-      <button class="chip" data-addr="barbara@carol.nostr">barbara@carol.nostr</button>
-      <button class="chip" data-addr="dave@michael.nostr">dave@michael.nostr</button>
-      <button class="chip" data-addr="frank@nostr">frank@nostr (ambiguous)</button>
+
+    <!-- Live pane -->
+    <div class="demo-pane" data-pane="live" hidden>
+      <div class="graph-legend">
+        Connects from <strong>your browser</strong> directly to the relays below over
+        WebSockets, fetching real kind-3 follow lists and kind-0 profiles on demand.
+        Results are <strong>unverified</strong> here (signatures aren't checked in the
+        browser) — re-check with the Rust resolver for signed proof. Walking a busy
+        account can mean fetching hundreds of profiles, so give it a moment.
+      </div>
+
+      <label class="field">
+        <span>Your key — the root namespace (npub, hex, or NIP-05 <code>name@domain</code>)</span>
+        <input id="live-root" autocomplete="off" spellcheck="false"
+               placeholder="npub1… / 64-char hex / name@domain" />
+      </label>
+      <label class="field">
+        <span>Relays (comma-separated <code>wss://</code> URLs)</span>
+        <input id="live-relays" autocomplete="off" spellcheck="false"
+               value="wss://relay.damus.io, wss://nos.lol, wss://relay.primal.net, wss://relay.nostr.band" />
+      </label>
+
+      <div class="demo-controls">
+        <input id="live-addr" autocomplete="off" spellcheck="false"
+               placeholder="GNS address, e.g. gigi@fiatjaf.nostr  — or a bare name for a direct lookup" />
+        <button id="live-resolve">Resolve</button>
+      </div>
+      <div class="chips">
+        <button class="chip live-chip"
+                data-root="npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
+                data-addr="jb55">fiatjaf → jb55</button>
+        <button class="chip live-chip"
+                data-root="npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
+                data-addr="jack">fiatjaf → jack</button>
+      </div>
+      <p class="live-note">
+        Live examples depend on what these relays currently serve and who the root
+        actually follows, so results — and any ambiguity — reflect the real graph
+        right now.
+      </p>
     </div>
 
     <div id="status" class="status"></div>
