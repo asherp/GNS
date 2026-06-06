@@ -1,34 +1,67 @@
-name: Deploy landing page
+name: Deploy landing site
 
+# Builds the Zola landing site in `site/` and publishes it to GitHub Pages.
+# Only deploys from the `docs` branch — push (or merge) there to ship the site.
 on:
   push:
-    branches: [main]
+    branches: ["docs"]
     paths:
       - "site/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
+# Allow this workflow to publish to Pages.
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow one concurrent deployment; let in-progress finish.
+# One in-flight deploy at a time; don't cancel a running deploy.
 concurrency:
   group: pages
   cancel-in-progress: false
 
+env:
+  ZOLA_VERSION: "0.19.2"
+
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+
+      - name: Install Zola
+        run: |
+          curl -sSfL \
+            "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz
+          sudo install -m 0755 zola /usr/local/bin/zola
+          zola --version
+
+      # Requires a one-time repo setting: Settings → Pages → Source = "GitHub
+      # Actions" (the Actions token can deploy Pages but cannot enable it).
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      # Override base_url so links are correct regardless of repo-name casing
+      # or a custom domain (configure-pages reports the real Pages URL).
+      - name: Build site
+        run: zola build --base-url "${{ steps.pages.outputs.base_url }}"
+        working-directory: site
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          path: site
-      - id: deployment
+          path: site/public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4

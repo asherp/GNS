@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ config.title }}</title>
+  <meta name="description" content="{{ config.description }}" />
+  <meta property="og:title" content="{{ config.title }}" />
+  <meta property="og:description" content="{{ config.description }}" />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◍</text></svg>" />
+  <link rel="stylesheet" href="{{ get_url(path='style.css') }}" />
+</head>
+<body>
+{% set github = config.extra.github_url %}
+{% set spec = config.extra.spec_url %}
+
+<header class="site-header">
+  <div class="brand">
+    <span class="logo">◍</span>
+    <span class="brand-name">GNS</span>
+  </div>
+  <nav>
+    <a href="#how">How it works</a>
+    <a href="#demo">Demo</a>
+    <a href="#names">Names</a>
+    <a href="#features">Features</a>
+    <a href="#api">API</a>
+    <a class="nav-cta" href="{{ github }}">GitHub ↗</a>
+  </nav>
+</header>
+
+<main>
+  <!-- ───────────────────────── Hero ───────────────────────── -->
+  <section class="hero">
+    <p class="eyebrow">Graph Name System</p>
+    <h1>Names that resolve through the<br /><span class="grad">Nostr social graph</span>.</h1>
+    <p class="lede">
+      DNS maps names to servers. NIP-05 maps names to public keys. <strong>GNS</strong>
+      resolves identities through <em>graph relationships</em> — so the same name can
+      mean different people depending on <em>where you stand</em> in the graph.
+    </p>
+    <div class="hero-cta">
+      <a class="btn" href="{{ github }}">Get the resolver</a>
+      <a class="btn ghost" href="#how">See how it works</a>
+    </div>
+
+    <div class="compare">
+      <div class="compare-row"><span class="k">DNS</span><span class="arrow">name → server</span></div>
+      <div class="compare-row"><span class="k">NIP-05</span><span class="arrow">name → pubkey</span></div>
+      <div class="compare-row hot"><span class="k">GNS</span><span class="arrow">(name, graph position) → pubkey</span></div>
+    </div>
+  </section>
+
+  <!-- ──────────────────── The core idea ──────────────────── -->
+  <section id="how" class="band">
+    <div class="section-head">
+      <h2>The scarce resource isn't the name — it's your <span class="grad">position in the graph</span>.</h2>
+      <p>
+        The same person is reachable through many paths, and each path is
+        <em>provenance</em>: it tells you <em>how</em> you discovered them.
+      </p>
+    </div>
+
+    <div class="address-card">
+      <div class="address">barbara@alex.michael.nostr</div>
+      <ul class="anatomy">
+        <li><span class="dot dot-name"></span><code>barbara</code> — the target name</li>
+        <li><span class="dot dot-path"></span><code>alex.michael</code> — the graph path (you → michael → alex)</li>
+        <li><span class="dot dot-tld"></span><code>.nostr</code> — optional namespace TLD</li>
+      </ul>
+      <p class="walk">
+        Read right-to-left from your namespace: find <code>michael</code> among
+        <em>your</em> follows, <code>alex</code> among michael's follows,
+        <code>barbara</code> among alex's. A bare <code>barbara</code> is a
+        compressed direct lookup.
+      </p>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <span class="num">1</span>
+        <h3>Walk follow lists</h3>
+        <p>A breadth-first walk over <strong>kind-3 contact lists</strong> — existing Nostr events. No new NIP required.</p>
+      </div>
+      <div class="step">
+        <span class="num">2</span>
+        <h3>Carry provenance</h3>
+        <p>Every hop records the <strong>follow event id</strong> and the <strong>relays</strong> it was observed on.</p>
+      </div>
+      <div class="step">
+        <span class="num">3</span>
+        <h3>Resolve to a pubkey</h3>
+        <p>The shortest follow-chain becomes the answer — a pubkey you can encrypt to, verified against signed events.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── Live demo ─────────────────────── -->
+  <section id="demo" class="band alt">
+    <div class="section-head">
+      <h2>Resolve a name, <span class="grad">live</span></h2>
+      <p>
+        Runs <strong>entirely in your browser</strong> on a built-in example graph —
+        no server, no relays. It mirrors the real resolver's normalization,
+        membership, and ambiguity rules.
+      </p>
+    </div>
+
+    <div class="graph-legend">
+      Example graph: <strong>You</strong> follow Michael, Carol, and two accounts both named
+      “Frank”. Michael follows Alex &amp; Dave; Alex, Carol, and Dave each follow Barbara.
+    </div>
+
+    <div class="demo-controls">
+      <input id="addr" value="barbara@alex.michael.nostr" autocomplete="off" spellcheck="false" />
+      <button id="resolve">Resolve</button>
+    </div>
+    <div class="chips">
+      <button class="chip" data-addr="barbara@alex.michael.nostr">barbara@alex.michael.nostr</button>
+      <button class="chip" data-addr="barbara@carol.nostr">barbara@carol.nostr</button>
+      <button class="chip" data-addr="dave@michael.nostr">dave@michael.nostr</button>
+      <button class="chip" data-addr="frank@nostr">frank@nostr (ambiguous)</button>
+    </div>
+
+    <div id="status" class="status"></div>
+    <canvas id="graph" class="graph"></canvas>
+    <div id="details" class="details" hidden>
+      <ol id="hops"></ol>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── Names ─────────────────────── -->
+  <section id="names" class="band">
+    <div class="section-head">
+      <h2>How a name becomes a label</h2>
+      <p>A profile is eligible for GNS only if its kind-0 <code>name</code> normalizes to a non-empty label.</p>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>Normalization</h3>
+        <p>Lowercase, then keep only ASCII <code>a–z</code> and <code>0–9</code>.</p>
+        <table class="norm">
+          <tr><td><code>"Michael Saylor"</code></td><td>→</td><td><code>michaelsaylor</code></td></tr>
+          <tr><td><code>"MICHAEL-SAYLOR"</code></td><td>→</td><td><code>michaelsaylor</code></td></tr>
+          <tr><td><code>"⚡Michael⚡"</code></td><td>→</td><td><code>michael</code></td></tr>
+          <tr><td><code>"FiatJaf"</code></td><td>→</td><td><code>fiatjaf</code></td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <h3>Membership &amp; ambiguity</h3>
+        <p>
+          A label <code>x</code> belongs to namespace <code>y</code> iff <code>y</code>'s
+          follow list contains a pubkey that normalizes to <code>x</code>.
+        </p>
+        <p>
+          If multiple followed pubkeys collide on a label, it is
+          <strong class="warn">ambiguous and must not resolve</strong> — the resolver
+          returns every alternate, fully-labelled path so a client can disambiguate.
+        </p>
+      </div>
+    </div>
+
+    <div class="coexist">
+      <p class="coexist-lede">Names are interpreted relative to a location in the graph, so they need not be globally unique:</p>
+      <div class="coexist-names">
+        <code>john.company</code>
+        <code>john.friend</code>
+        <code>john.bitcoin</code>
+      </div>
+      <p class="coexist-note">All can coexist.</p>
+    </div>
+  </section>
+
+  <!-- ───────────────────── Features ───────────────────── -->
+  <section id="features" class="band">
+    <div class="section-head">
+      <h2>What the resolver gives you</h2>
+    </div>
+    <div class="features">
+      <div class="feature">
+        <span class="fic">⛓</span>
+        <h3>Full provenance</h3>
+        <p>Every hop carries its follow event id and the relays it was seen on — discovery you can audit.</p>
+      </div>
+      <div class="feature">
+        <span class="fic">🛰</span>
+        <h3>Relay attribution</h3>
+        <p>A minimal per-relay websocket client so each follow event is attributed to the relays that served it.</p>
+      </div>
+      <div class="feature">
+        <span class="fic">∅</span>
+        <h3>No new NIP</h3>
+        <p>Built entirely on existing kind-0 profiles and kind-3 contact lists. Relays stay the source of truth.</p>
+      </div>
+      <div class="feature">
+        <span class="fic">♻</span>
+        <h3>Freshness cache</h3>
+        <p>A TTL "freshness window" over follow lists and profiles — the public-good caching dynamic.</p>
+      </div>
+      <div class="feature">
+        <span class="fic">✓</span>
+        <h3>Verified events</h3>
+        <p>Schnorr signatures checked on every fetched event; NIP-01 ids recomputed. Clients can re-verify.</p>
+      </div>
+      <div class="feature">
+        <span class="fic">◍</span>
+        <h3>Live dashboard</h3>
+        <p>A dependency-free dashboard draws the resolved path as avatar bubbles with per-hop relays and ids.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── API ─────────────────────── -->
+  <section id="api" class="band alt">
+    <div class="section-head">
+      <h2>A small HTTP API</h2>
+      <p>Run it locally, point it at relays, and resolve.</p>
+    </div>
+
+    <div class="grid-2">
+      <div class="code-card">
+        <div class="code-title">Demo mode — no network</div>
+<pre><code>cargo run -- --demo
+# open http://127.0.0.1:8080/
+# click "Load demo example" → Resolve</code></pre>
+      </div>
+      <div class="code-card">
+        <div class="code-title">Resolve a GNS address</div>
+<pre><code>GET /api/resolve-name
+  ?from=&lt;npub|hex&gt;
+  &amp;name=barbara@alex.michael.nostr</code></pre>
+      </div>
+    </div>
+
+    <div class="endpoints">
+      <div class="ep"><code>/api/resolve</code><span>shortest follow-chain between two pubkeys, with edges + relays</span></div>
+      <div class="ep"><code>/api/resolve-name</code><span>resolve a GNS address from your namespace</span></div>
+      <div class="ep"><code>/api/normalize</code><span>the normalized label for any name, and whether it's valid</span></div>
+      <div class="ep"><code>/api/profile</code><span>kind-0 metadata (name, display name, picture, nip05, about)</span></div>
+      <div class="ep"><code>/healthz</code><span>liveness probe</span></div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── Vision ─────────────────────── -->
+  <section class="band vision">
+    <div class="section-head">
+      <h2>A <span class="grad">Web of Names</span>, not a Web of Trust</h2>
+      <p>
+        GNS turns the Nostr social graph into a decentralized naming layer. Trust
+        may emerge from the graph, but the primary purpose is <strong>discovery and
+        naming</strong>. If an indexer disappears, another can rebuild entirely from
+        relay data. A client resolves <code>barbara@alex.michael.nostr</code> to a
+        pubkey, encrypts to it, and delivers — the user never sees a public key.
+      </p>
+    </div>
+    <div class="vision-cta">
+      <a class="btn" href="{{ github }}">Read the source</a>
+      <a class="btn ghost" href="{{ spec }}">The naming spec ↗</a>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="brand">
+    <span class="logo">◍</span>
+    <span class="brand-name">GNS — Graph Name System</span>
+  </div>
+  <div class="footer-links">
+    <a href="{{ github }}">GitHub</a>
+    <a href="{{ spec }}">Naming spec</a>
+    <a href="#how">How it works</a>
+  </div>
+  <p class="fineprint">Decentralized name resolution over the Nostr social graph · MIT licensed</p>
+</footer>
+
+<script src="{{ get_url(path='app.js') }}"></script>
+</body>
+</html>
