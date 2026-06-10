@@ -23,12 +23,40 @@ pub async fn query_relay(
     limit: u32,
     request_timeout: Duration,
 ) -> Vec<Event> {
-    match timeout(
-        request_timeout,
-        query_relay_inner(relay, authors, kind, limit),
-    )
-    .await
-    {
+    let filter = serde_json::json!({
+        "authors": authors,
+        "kinds": [kind],
+        "limit": limit,
+    });
+    query_filter(relay, filter, request_timeout).await
+}
+
+/// Query one relay for the reverse edges of `target_hex`: kind-3 events that
+/// carry the target in a `p` tag (`#p` filter). Each returned event's author is
+/// a follower of the target. Best-effort — coverage depends on the relay.
+pub async fn query_relay_followers(
+    relay: &str,
+    target_hex: &str,
+    kind: u32,
+    limit: u32,
+    request_timeout: Duration,
+) -> Vec<Event> {
+    let filter = serde_json::json!({
+        "kinds": [kind],
+        "#p": [target_hex],
+        "limit": limit,
+    });
+    query_filter(relay, filter, request_timeout).await
+}
+
+/// Run a single `REQ` with an arbitrary filter, with a timeout and error
+/// logging, returning every event the relay served before `EOSE`.
+async fn query_filter(
+    relay: &str,
+    filter: serde_json::Value,
+    request_timeout: Duration,
+) -> Vec<Event> {
+    match timeout(request_timeout, query_relay_inner(relay, filter)).await {
         Ok(Ok(events)) => events,
         Ok(Err(e)) => {
             warn!(relay, error = %e, "relay query failed");
@@ -41,20 +69,10 @@ pub async fn query_relay(
     }
 }
 
-async fn query_relay_inner(
-    relay: &str,
-    authors: &[String],
-    kind: u32,
-    limit: u32,
-) -> anyhow::Result<Vec<Event>> {
+async fn query_relay_inner(relay: &str, filter: serde_json::Value) -> anyhow::Result<Vec<Event>> {
     let (mut ws, _resp) = tokio_tungstenite::connect_async(relay).await?;
 
     let sub_id = "gns";
-    let filter = serde_json::json!({
-        "authors": authors,
-        "kinds": [kind],
-        "limit": limit,
-    });
     let req = serde_json::json!(["REQ", sub_id, filter]);
     ws.send(Message::text(req.to_string())).await?;
 

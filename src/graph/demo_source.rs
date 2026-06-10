@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 
-use super::source::{ContactList, GraphSource, Profile};
+use super::source::{ContactList, FollowerEdge, FollowerList, GraphSource, Profile};
 
 /// 32-byte hex pubkey built by repeating a single byte. Handy for fixtures.
 fn pk(byte: u8) -> String {
@@ -102,6 +102,10 @@ impl DemoSource {
     pub fn barbara() -> String {
         pk(0x04)
     }
+    #[allow(dead_code)]
+    pub fn michael() -> String {
+        pk(0x02)
+    }
 }
 
 #[async_trait]
@@ -112,5 +116,73 @@ impl GraphSource for DemoSource {
 
     async fn profile(&self, pubkey_hex: &str) -> anyhow::Result<Option<Profile>> {
         Ok(self.profiles.get(pubkey_hex).cloned())
+    }
+
+    async fn followers(&self, pubkey_hex: &str) -> anyhow::Result<FollowerList> {
+        // Reverse the fixture forward edges: anyone whose list includes the
+        // target is a follower, carrying that list's provenance.
+        let mut followers: Vec<FollowerEdge> = self
+            .contacts
+            .values()
+            .filter(|cl| cl.follows.iter().any(|f| f == pubkey_hex))
+            .map(|cl| FollowerEdge {
+                follower: cl.owner.clone(),
+                event_id: cl.event_id.clone(),
+                relays: cl.relays.clone(),
+                created_at: cl.created_at,
+            })
+            .collect();
+        followers.sort_by(|a, b| {
+            b.created_at
+                .cmp(&a.created_at)
+                .then_with(|| a.follower.cmp(&b.follower))
+        });
+        Ok(FollowerList {
+            target: pubkey_hex.to_string(),
+            followers,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn reverse_edges_collect_all_followers_with_provenance() {
+        let src = DemoSource::new();
+        // Barbara is followed by Alex, Carol and Dave in the fixture graph.
+        let list = src.followers(&DemoSource::barbara()).await.unwrap();
+        assert_eq!(list.target, DemoSource::barbara());
+
+        let mut followers: Vec<&str> = list.followers.iter().map(|e| e.follower.as_str()).collect();
+        followers.sort();
+        assert_eq!(
+            followers,
+            vec![pk(0x03).as_str(), pk(0x05).as_str(), pk(0x06).as_str()]
+        );
+
+        // Every reverse edge carries the same provenance as the forward edge.
+        for edge in &list.followers {
+            assert!(!edge.event_id.is_empty());
+            assert!(!edge.relays.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn unfollowed_pubkey_has_no_followers() {
+        let src = DemoSource::new();
+        // `You` is the root: nobody in the fixture follows them.
+        let list = src.followers(&DemoSource::you()).await.unwrap();
+        assert!(list.followers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn follower_edge_reverses_a_known_forward_edge() {
+        let src = DemoSource::new();
+        // You → Michael, so Michael's followers include You.
+        let list = src.followers(&DemoSource::michael()).await.unwrap();
+        assert_eq!(list.followers.len(), 1);
+        assert_eq!(list.followers[0].follower, DemoSource::you());
     }
 }

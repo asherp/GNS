@@ -27,6 +27,8 @@ pub struct Config {
     pub max_fanout: usize,
     /// Max alternate paths carried forward when a label is ambiguous.
     pub max_name_paths: usize,
+    /// Max kind-3 events requested per relay for a reverse-follower query.
+    pub follower_query_limit: u32,
     /// Directory of static dashboard assets.
     pub static_dir: String,
 }
@@ -48,6 +50,7 @@ impl Default for Config {
             max_depth: 6,
             max_fanout: 5000,
             max_name_paths: 16,
+            follower_query_limit: 500,
             static_dir: "static".to_string(),
         }
     }
