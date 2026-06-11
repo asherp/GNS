@@ -47,6 +47,13 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    // rustls 0.23 has no built-in default crypto provider, so the first wss://
+    // TLS handshake would otherwise panic. Install the ring provider once,
+    // before any relay connection is opened.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("failed to install rustls ring crypto provider");
+
     let cli = Cli::parse();
 
     let mut cfg = if cli.config.exists() {

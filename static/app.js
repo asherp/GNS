@@ -30,13 +30,24 @@ fetch("/api/config")
   });
 
 // ---- Mode tabs ----
+// Switch the active tab and toggle the fields/panels that belong to it.
+function activateMode(newMode) {
+  mode = newMode;
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.mode === mode));
+  // `data-fields` is a space-separated list of modes the field belongs to.
+  document.querySelectorAll(".mode-fields").forEach((f) => {
+    f.hidden = !f.dataset.fields.split(/\s+/).includes(mode);
+  });
+  // Followers has its own result panel and no path canvas.
+  const followers = mode === "followers";
+  $("viz").hidden = followers;
+  $("resolve-btn").textContent = followers ? "Fetch followers" : "Resolve";
+}
+
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
-    mode = tab.dataset.mode;
-    document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
-    document.querySelectorAll(".mode-fields").forEach((f) => {
-      f.hidden = f.dataset.fields !== mode;
-    });
+    activateMode(tab.dataset.mode);
+    setStatus("", "");
   });
 });
 
@@ -44,6 +55,8 @@ demoBtn.addEventListener("click", () => {
   if (config.demo_from) $("from").value = config.demo_from;
   if (mode === "name") {
     if (config.demo_name) $("name").value = config.demo_name;
+  } else if (mode === "followers") {
+    if (config.demo_from) $("follower-pubkey").value = config.demo_from;
   } else if (config.demo_to) {
     $("to").value = config.demo_to;
   }
@@ -52,6 +65,23 @@ demoBtn.addEventListener("click", () => {
 // ---- Resolve ----
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
+
+  if (mode === "followers") {
+    const pubkey = $("follower-pubkey").value.trim();
+    if (!pubkey) {
+      setStatus("Enter a pubkey (npub or hex).", "err");
+      return;
+    }
+    // Push a shareable, back-button-friendly URL; the popstate/boot handlers
+    // below re-render from it. Skip the push if we're already on this pubkey.
+    const params = new URLSearchParams(location.search);
+    if (!(params.get("tab") === "followers" && params.get("pubkey") === pubkey)) {
+      history.pushState({ tab: "followers", pubkey }, "", followersUrl(pubkey));
+    }
+    await fetchFollowers(true);
+    return;
+  }
+
   const from = $("from").value.trim();
   if (!from) {
     setStatus("Enter your `from` pubkey.", "err");
@@ -112,6 +142,206 @@ function setStatus(msg, cls) {
 function shortNpub(npub) {
   return npub.length > 18 ? `${npub.slice(0, 12)}…${npub.slice(-6)}` : npub;
 }
+
+// ---------------------------------------------------------------------------
+// Followers tab: page through /api/followers and show each follow's provenance.
+// Followers are a reverse `#p` tag lookup on relays — no graph walk, no depth.
+// ---------------------------------------------------------------------------
+const FOLLOWER_PAGE = 25;
+const followersHeadEl = $("followers-head");
+const followerListEl = $("follower-list");
+const loadMoreBtn = $("load-more");
+let followerState = { pubkey: "", offset: 0, count: 0 };
+
+loadMoreBtn.addEventListener("click", () => fetchFollowers(false));
+
+async function fetchFollowers(reset) {
+  const pubkey = reset ? $("follower-pubkey").value.trim() : followerState.pubkey;
+  if (!pubkey) {
+    setStatus("Enter a pubkey (npub or hex).", "err");
+    return;
+  }
+  if (reset) {
+    followerState = { pubkey, offset: 0, count: 0 };
+    followerListEl.innerHTML = "";
+    followersHeadEl.textContent = "";
+    loadMoreBtn.hidden = true;
+  }
+
+  detailsEl.hidden = true;
+  $("followers-result").hidden = false;
+  $("resolve-btn").disabled = true;
+  loadMoreBtn.disabled = true;
+  setStatus(reset ? "Querying relays for followers…" : "Loading more…", "");
+
+  try {
+    const params = new URLSearchParams({
+      pubkey: followerState.pubkey,
+      limit: FOLLOWER_PAGE,
+      offset: followerState.offset,
+    });
+    const res = await fetch(`/api/followers?${params}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setStatus(data.error || "Failed to fetch followers.", "err");
+      return;
+    }
+
+    followerState.count = data.count;
+    renderFollowersHead(data);
+    (data.followers || []).forEach((f) => {
+      followerListEl.appendChild(followerRow(f));
+      enrichFollower(f); // progressively fill in display name + avatar
+    });
+    followerState.offset += (data.followers || []).length;
+
+    const shown = followerState.offset;
+    loadMoreBtn.hidden = shown >= data.count;
+    loadMoreBtn.textContent = `Load ${Math.min(FOLLOWER_PAGE, data.count - shown)} more`;
+    setStatus(`Showing ${shown} of ${data.count} follower${data.count === 1 ? "" : "s"}.`, "ok");
+  } catch (err) {
+    setStatus(String(err), "err");
+  } finally {
+    $("resolve-btn").disabled = false;
+    loadMoreBtn.disabled = false;
+  }
+}
+
+function renderFollowersHead(data) {
+  followersHeadEl.innerHTML = "";
+  const title = document.createElement("div");
+  title.className = "followers-title";
+  title.textContent = `Followers of ${shortNpub(data.npub)}`;
+  const meta = document.createElement("div");
+  meta.className = "followers-meta";
+  const relays = (config.relays || []).length;
+  meta.textContent = data.best_effort
+    ? `${data.count} found · best-effort across ${relays} relay${relays === 1 ? "" : "s"}`
+    : `${data.count} found`;
+  followersHeadEl.appendChild(title);
+  followersHeadEl.appendChild(meta);
+}
+
+function followerRow(f) {
+  const li = document.createElement("li");
+  li.className = "follower";
+  li.dataset.pubkey = f.pubkey;
+
+  const avatar = document.createElement("div");
+  avatar.className = "follower-avatar";
+  avatar.textContent = "·";
+
+  const body = document.createElement("div");
+  body.className = "follower-body";
+
+  const name = document.createElement("div");
+  name.className = "follower-name";
+  // Keep the display text in its own span so async profile enrichment can
+  // replace the name without clobbering the mutual pill (a sibling element).
+  const nameText = document.createElement("span");
+  nameText.className = "follower-name-text";
+  nameText.textContent = shortNpub(f.npub);
+  name.appendChild(nameText);
+  if (f.mutual) {
+    const pill = document.createElement("span");
+    pill.className = "mutual-pill";
+    pill.textContent = "mutual";
+    pill.title = "You follow each other";
+    name.appendChild(pill);
+  }
+
+  const npub = document.createElement("div");
+  npub.className = "follower-npub hop-npub";
+  npub.textContent = f.npub;
+
+  const meta = document.createElement("div");
+  meta.className = "edge-meta";
+  const ev = document.createElement("div");
+  ev.innerHTML = `follow event <code>${f.follow_event_id.slice(0, 16)}…</code>`;
+  if (f.created_at) {
+    const when = document.createElement("span");
+    when.className = "follow-when";
+    when.textContent = ` · ${new Date(f.created_at * 1000).toLocaleDateString()}`;
+    ev.appendChild(when);
+  }
+  meta.appendChild(ev);
+  const relays = document.createElement("div");
+  if (f.relays && f.relays.length) {
+    f.relays.forEach((r) => {
+      const chip = document.createElement("span");
+      chip.className = "relay-chip";
+      chip.textContent = r;
+      relays.appendChild(chip);
+    });
+  } else {
+    relays.textContent = "(no relay attribution)";
+  }
+  meta.appendChild(relays);
+
+  body.appendChild(name);
+  body.appendChild(npub);
+  body.appendChild(meta);
+  li.appendChild(avatar);
+  li.appendChild(body);
+  return li;
+}
+
+// Best-effort, non-blocking profile lookup to swap the short npub for a real
+// display name + avatar once the relay round-trip returns. Failures are silent.
+async function enrichFollower(f) {
+  try {
+    const res = await fetch(`/api/profile?pubkey=${encodeURIComponent(f.pubkey)}`);
+    if (!res.ok) return;
+    const { profile } = await res.json();
+    if (!profile) return;
+    const row = followerListEl.querySelector(`li[data-pubkey="${f.pubkey}"]`);
+    if (!row) return;
+    const label = profile.display_name || profile.name;
+    if (label) row.querySelector(".follower-name-text").textContent = label;
+    if (profile.picture) {
+      const avatar = row.querySelector(".follower-avatar");
+      const img = new Image();
+      img.alt = "";
+      img.onload = () => { avatar.textContent = ""; avatar.appendChild(img); };
+      img.src = profile.picture;
+    } else if (label) {
+      row.querySelector(".follower-avatar").textContent = label.slice(0, 1).toUpperCase();
+    }
+  } catch (_) {
+    /* enrichment is best-effort; keep the npub fallback */
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Deep-linking: ?tab=followers&pubkey=<npub|hex> so the view is shareable and
+// the back/forward buttons work.
+// ---------------------------------------------------------------------------
+function followersUrl(pubkey) {
+  return `?tab=followers&pubkey=${encodeURIComponent(pubkey)}`;
+}
+
+// Render whatever the current URL describes. Called on first load and on
+// back/forward navigation; it never pushes history itself.
+function applyRoute() {
+  const params = new URLSearchParams(location.search);
+  const pubkey = params.get("pubkey");
+  if (params.get("tab") === "followers" && pubkey) {
+    activateMode("followers");
+    $("follower-pubkey").value = pubkey;
+    // Skip a redundant relay round-trip if this list is already on screen.
+    if (followerState.pubkey !== pubkey || $("followers-result").hidden) {
+      fetchFollowers(true);
+    }
+  } else {
+    // Not a followers route — fall back to the default path view.
+    if (mode === "followers") activateMode("name");
+    $("followers-result").hidden = true;
+    setStatus("", "");
+  }
+}
+
+window.addEventListener("popstate", applyRoute);
+applyRoute(); // honor a deep link on first page load
 
 function nodeLabel(node) {
   const p = node.profile || {};

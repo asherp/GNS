@@ -204,6 +204,52 @@ button.ghost {
   font-size: 11px;
 }
 
+/* Followers tab */
+.followers-head { margin-bottom: 14px; }
+.followers-title { font-size: 15px; font-weight: 600; }
+.followers-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.follower-list { list-style: none; margin: 0; padding: 0; }
+.follower {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.follower:first-child { border-top: none; }
+.follower-avatar {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+  overflow: hidden;
+}
+.follower-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.follower-body { min-width: 0; flex: 1; }
+.follower-name { font-weight: 600; font-size: 13px; }
+.mutual-pill {
+  display: inline-block;
+  margin-left: 8px;
+  background: rgba(63,185,80,0.15);
+  border: 1px solid var(--ok);
+  color: #7ee787;
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.follower-npub { margin-top: 1px; }
+.follow-when { color: var(--muted); }
+#load-more { margin-top: 14px; }
+
 @media (max-width: 880px) {
   main { grid-template-columns: 1fr; }
   .controls { grid-row: auto; }

@@ -183,6 +183,16 @@ async fn followers_handler(
         }
     };
 
+    // The subject's own follow list lets us flag mutual follows. This is a
+    // best-effort enrichment: if the kind-3 list is missing or the query fails,
+    // we simply mark nobody mutual rather than failing the request.
+    let following: std::collections::HashSet<String> =
+        match state.source.contacts(&pk.to_hex()).await {
+            Ok(Some(contacts)) => contacts.follows.into_iter().collect(),
+            _ => std::collections::HashSet::new(),
+        };
+    let following_known = !following.is_empty();
+
     let count = list.followers.len();
     let page: Vec<_> = list
         .followers
@@ -196,6 +206,7 @@ async fn followers_handler(
                 "follow_event_id": edge.event_id,
                 "relays": edge.relays,
                 "created_at": edge.created_at,
+                "mutual": following.contains(&edge.follower),
             })
         })
         .collect();
@@ -207,6 +218,9 @@ async fn followers_handler(
         "limit": limit,
         "offset": offset,
         "followers": page,
+        // Whether the subject's own follow list was available; when false, the
+        // `mutual` flags are all false because we couldn't determine mutuality.
+        "following_known": following_known,
         // Reverse edges are reconstructed from whatever kind-3 events the
         // configured relays return, so this is a lower bound, not a census.
         "best_effort": true,
