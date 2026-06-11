@@ -34,9 +34,15 @@ This repository is a **lightweight resolver** with two layers:
 2. **Name resolution** — given a `from` pubkey and a GNS address such as
    `barbara@alex.michael.nostr`, walk the address's labels through follow lists
    and return the resolved pubkey (or alternate paths when ambiguous).
+3. **Reverse-edge (follower) lookup** — given a pubkey, return the set (and
+   count) of pubkeys that follow it: the inverse of the follow-graph above.
+   Nostr follow lists are one-directional and have no native follower index;
+   GNS already runs relay clients with attribution, so reconstructing reverse
+   edges from kind-3 events is a natural extension (best-effort given relay
+   coverage).
 
-Both run as a breadth-first walk over **kind-3 contact lists**, using only
-existing Nostr events. No new NIP is required.
+Both resolution layers run as a breadth-first walk over **kind-3 contact
+lists**, using only existing Nostr events. No new NIP is required.
 
 ## GNS names
 
@@ -100,7 +106,7 @@ Nostr Relays  ──►  GNS Indexer (this server)  ──►  Clients / Dashboa
 | `src/graph/name.rs` | Label normalization + namespace membership / ambiguity |
 | `src/graph/address.rs` | GNS address parsing (`barbara@alex.michael.nostr`) |
 | `src/graph/name_resolver.rs` | Walk an address's labels through the graph |
-| `src/api.rs` | HTTP API (`/api/resolve`, `/api/resolve-name`, `/api/normalize`, …) |
+| `src/api.rs` | HTTP API (`/api/resolve`, `/api/resolve-name`, `/api/followers`, `/api/normalize`, …) |
 | `static/` | Self-contained dashboard with avatar-bubble graph |
 
 The relay client is implemented directly on websockets (rather than via a higher
@@ -179,6 +185,42 @@ Resolves a GNS address from the caller's namespace.
 When a label is ambiguous, `resolved` is omitted, `ambiguous` is `true`, and
 `paths` contains every alternate route with a `note` explaining why.
 
+### `GET /api/followers?pubkey=<npub|hex>&limit=<n>&offset=<n>`
+
+The **reverse edge** of resolution: given a pubkey, return the pubkeys observed
+**following** it — every kind-3 list that carries it in a `p` tag. This is the
+inverse of the follow-graph GNS already walks, filling the gap left by
+nostr.band as a follower index.
+
+```jsonc
+{
+  "pubkey": "04…",
+  "npub":   "npub1…",
+  "count":  3,                  // total followers known (pre-pagination)
+  "limit":  50,
+  "offset": 0,
+  "followers": [
+    { "npub": "npub1…", "pubkey": "03…",
+      "follow_event_id": "…",   // the follower's kind-3 event
+      "relays": ["wss://relay.damus.io"],
+      "created_at": 1700000000 }
+  ],
+  "best_effort": true
+}
+```
+
+* `followers` — newest-first, one entry per distinct follower (their newest
+  kind-3 event wins), each with the same relay-attribution/provenance GNS tracks
+  for forward edges, so a caller can show *how* a follower is connected.
+* `count` — total followers known before pagination; page with `limit`
+  (default 50, max 500) and `offset`.
+* **Best-effort.** Results are reconstructed from whatever kind-3 events the
+  configured relays return for a `{kinds:[3], #p:[pubkey]}` query, so the set is
+  a lower bound (a census, not the truth) and is eventually-consistent: coverage
+  depends on relay reach, and a follower who has unfollowed may linger until
+  their newest list propagates. Served from the same TTL freshness cache as the
+  rest of GNS.
+
 ### `GET /api/normalize?name=<string>`
 
 Returns the normalized GNS label for a name and whether it is valid (non-empty):
@@ -208,6 +250,7 @@ cache_ttl_secs = 300        # freshness window
 cache_capacity = 100000
 verify_signatures = true    # drop events that fail schnorr verification
 max_depth = 6
+follower_query_limit = 500  # max kind-3 events per relay for /api/followers
 static_dir = "static"
 ```
 

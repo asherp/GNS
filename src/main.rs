@@ -67,6 +67,7 @@ async fn main() -> anyhow::Result<()> {
             cfg.relays.clone(),
             cfg.relay_timeout(),
             cfg.verify_signatures,
+            cfg.follower_query_limit,
         );
         Arc::new(CachedSource::new(
             Arc::new(relay_src),

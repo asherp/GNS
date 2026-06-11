@@ -14,7 +14,7 @@ use crate::graph::{
     normalize_label, parse_gns_address, resolve, resolve_address, DemoSource, GraphSource,
     NameResolveOptions, ResolveOptions,
 };
-use crate::nostr::PublicKey;
+use crate::nostr::{hex_to_npub, PublicKey};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -31,6 +31,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/resolve", get(resolve_handler))
         .route("/api/resolve-name", get(resolve_name_handler))
         .route("/api/normalize", get(normalize_handler))
+        .route("/api/followers", get(followers_handler))
         .route("/api/profile", get(profile_handler))
         .route("/api/config", get(config_handler))
         .route("/healthz", get(|| async { "ok" }))
@@ -139,6 +140,78 @@ async fn normalize_handler(Query(params): Query<NormalizeParams>) -> impl IntoRe
         "label": label,
         "valid": !label.is_empty(),
     }))
+}
+
+#[derive(Debug, Deserialize)]
+struct FollowersParams {
+    /// Target pubkey whose followers we want, npub or hex.
+    pubkey: String,
+    /// Page size (default 50, capped at 500).
+    limit: Option<usize>,
+    /// Page offset into the (newest-first) follower list.
+    offset: Option<usize>,
+}
+
+/// Default and maximum page sizes for `/api/followers`.
+const FOLLOWERS_DEFAULT_LIMIT: usize = 50;
+const FOLLOWERS_MAX_LIMIT: usize = 500;
+
+async fn followers_handler(
+    State(state): State<AppState>,
+    Query(params): Query<FollowersParams>,
+) -> impl IntoResponse {
+    let pk = match PublicKey::parse(&params.pubkey) {
+        Ok(pk) => pk,
+        Err(e) => return bad_request(format!("invalid `pubkey`: {e}")).into_response(),
+    };
+    let limit = params
+        .limit
+        .unwrap_or(FOLLOWERS_DEFAULT_LIMIT)
+        .clamp(1, FOLLOWERS_MAX_LIMIT);
+    let offset = params.offset.unwrap_or(0);
+
+    let list = match state.source.followers(&pk.to_hex()).await {
+        Ok(list) => list,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    error: e.to_string(),
+                }),
+            )
+                .into_response()
+        }
+    };
+
+    let count = list.followers.len();
+    let page: Vec<_> = list
+        .followers
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .map(|edge| {
+            json!({
+                "npub": hex_to_npub(&edge.follower),
+                "pubkey": edge.follower,
+                "follow_event_id": edge.event_id,
+                "relays": edge.relays,
+                "created_at": edge.created_at,
+            })
+        })
+        .collect();
+
+    Json(json!({
+        "pubkey": pk.to_hex(),
+        "npub": pk.to_npub(),
+        "count": count,
+        "limit": limit,
+        "offset": offset,
+        "followers": page,
+        // Reverse edges are reconstructed from whatever kind-3 events the
+        // configured relays return, so this is a lower bound, not a census.
+        "best_effort": true,
+    }))
+    .into_response()
 }
 
 #[derive(Debug, Deserialize)]

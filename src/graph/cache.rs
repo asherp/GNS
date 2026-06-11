@@ -11,7 +11,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use moka::future::Cache;
 
-use super::source::{ContactList, GraphSource, Profile};
+use super::source::{ContactList, FollowerList, GraphSource, Profile};
 
 #[derive(Clone)]
 pub struct CachedSource {
@@ -19,6 +19,8 @@ pub struct CachedSource {
     // moka caches `Option` so we also remember "no event exists" for the TTL.
     contacts: Cache<String, Arc<Option<ContactList>>>,
     profiles: Cache<String, Arc<Option<Profile>>>,
+    // Reverse-edge sets share the same freshness window; results are best-effort.
+    followers: Cache<String, Arc<FollowerList>>,
 }
 
 impl CachedSource {
@@ -30,6 +32,10 @@ impl CachedSource {
                 .time_to_live(ttl)
                 .build(),
             profiles: Cache::builder()
+                .max_capacity(capacity)
+                .time_to_live(ttl)
+                .build(),
+            followers: Cache::builder()
                 .max_capacity(capacity)
                 .time_to_live(ttl)
                 .build(),
@@ -56,6 +62,17 @@ impl GraphSource for CachedSource {
         }
         let fetched = self.inner.profile(pubkey_hex).await?;
         self.profiles
+            .insert(pubkey_hex.to_string(), Arc::new(fetched.clone()))
+            .await;
+        Ok(fetched)
+    }
+
+    async fn followers(&self, pubkey_hex: &str) -> anyhow::Result<FollowerList> {
+        if let Some(hit) = self.followers.get(pubkey_hex).await {
+            return Ok((*hit).clone());
+        }
+        let fetched = self.inner.followers(pubkey_hex).await?;
+        self.followers
             .insert(pubkey_hex.to_string(), Arc::new(fetched.clone()))
             .await;
         Ok(fetched)
