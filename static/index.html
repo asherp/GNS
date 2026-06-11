@@ -23,13 +23,16 @@
       <div class="tabs">
         <button type="button" class="tab active" data-mode="name">By name</button>
         <button type="button" class="tab" data-mode="pubkey">By pubkey</button>
+        <button type="button" class="tab" data-mode="followers">Followers</button>
       </div>
 
       <form id="resolve-form">
-        <label>
-          From <span class="hint">(your pubkey — npub or hex)</span>
-          <input id="from" name="from" placeholder="npub1…" autocomplete="off" spellcheck="false" />
-        </label>
+        <div class="mode-fields" data-fields="name pubkey">
+          <label>
+            From <span class="hint">(your pubkey — npub or hex)</span>
+            <input id="from" name="from" placeholder="npub1…" autocomplete="off" spellcheck="false" />
+          </label>
+        </div>
 
         <div class="mode-fields" data-fields="name">
           <label>
@@ -49,6 +52,13 @@
           </label>
         </div>
 
+        <div class="mode-fields" data-fields="followers" hidden>
+          <label>
+            Pubkey <span class="hint">(whose followers — npub or hex)</span>
+            <input id="follower-pubkey" name="follower-pubkey" placeholder="npub1…" autocomplete="off" spellcheck="false" />
+          </label>
+        </div>
+
         <div class="buttons">
           <button type="submit" id="resolve-btn">Resolve</button>
           <button type="button" id="demo-btn" class="ghost" hidden>Load demo example</button>
@@ -58,13 +68,19 @@
       <div id="address" class="address"></div>
     </section>
 
-    <section class="viz">
+    <section id="viz" class="viz">
       <canvas id="graph"></canvas>
     </section>
 
     <section id="details" class="details" hidden>
       <h2>Resolution path</h2>
       <ol id="hops"></ol>
+    </section>
+
+    <section id="followers-result" class="details" hidden>
+      <div id="followers-head" class="followers-head"></div>
+      <ul id="follower-list" class="follower-list"></ul>
+      <button type="button" id="load-more" class="ghost" hidden>Load more</button>
     </section>
   </main>
 
